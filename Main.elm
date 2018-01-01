@@ -4,6 +4,7 @@ import Svg.Attributes exposing (..)
 import Svg.Events exposing (..)
 import Tuple exposing (first, second)
 import Mouse
+import Json.Decode exposing (Decoder)
 
 main =
   Html.program {
@@ -12,7 +13,7 @@ main =
       data = defaultData,
       width = 1200,
       height = 600,
-      selectedPoint = Nothing
+      selection = Nothing
     }, Cmd.none),
     view = view,
     update = update,
@@ -20,36 +21,39 @@ main =
   }
 
 type alias Point = { id: Int, x: Int, y: Int }
-type alias Chart = { origin: Point, data: List Point, width: Int, height: Int, selectedPoint: Maybe Int }
-type Message = SelectPoint Int | DragAt Mouse.Position | DragEnd Mouse.Position
+type alias Selection = { originalPoint : Point, originalMousePosition: Mouse.Position }
+type alias Chart = { origin: Point, data: List Point, width: Int, height: Int, selection: Maybe Selection }
+type Message = SelectPoint Selection | DragAt Mouse.Position | DragEnd Mouse.Position
 
 subscriptions : Chart -> Sub Message
-subscriptions chart = case chart.selectedPoint of
-  Just id -> Sub.batch [ Mouse.moves DragAt, Mouse.ups DragEnd ]
+subscriptions chart = case chart.selection of
+  Just _ -> Sub.batch [ Mouse.moves DragAt, Mouse.ups DragEnd ]
   Nothing -> Sub.none
 
 update : Message -> Chart -> (Chart, Cmd Message)
 update message chart =
   case message of
-    SelectPoint pointId -> ({ chart | selectedPoint = Just pointId }, Cmd.none)
-    DragAt position -> case chart.selectedPoint of
-      Just pointId -> (updatePosition chart pointId (toChartPosition chart position), Cmd.none)
+    SelectPoint selection -> ({ chart | selection = Just selection }, Cmd.none)
+    DragAt position -> case chart.selection of
+      Just selection -> (updatePosition chart selection position, Cmd.none)
       Nothing -> (chart, Cmd.none)
-    DragEnd _ -> ({ chart | selectedPoint = Nothing }, Cmd.none)
+    DragEnd _ -> ({ chart | selection = Nothing }, Cmd.none)
 
 defaultData : List Point
 defaultData =
   List.map (\n -> { id = n, x = 100 + n * 20, y = 100 + n * 20 }) (List.range 1 15)
 
-toChartPosition : Chart -> Mouse.Position -> Point
-toChartPosition chart mousePosition =
-  -- assumes the SVG upper left corner is the window's upper left corner
-  { x = mousePosition.x - chart.origin.x, y = chart.height - mousePosition.y, id = -1 }
-
-updatePosition : Chart -> Int -> Point -> Chart
-updatePosition chart movedPointId targetPoint =
-    {chart | data = (chart.data |> List.filter (\point -> point.id /= movedPointId))
-    ++ [{ targetPoint | id = movedPointId }]}
+updatePosition : Chart -> Selection -> Mouse.Position -> Chart
+updatePosition chart selection position =
+  let
+    selectedPoint = chart.data |> List.filter (\point -> point.id == selection.originalPoint.id) |> List.head
+    offsetXWindow = position.x - selection.originalMousePosition.x
+    offsetYWindow = position.y - selection.originalMousePosition.y
+  in
+    case selectedPoint of
+      Just point -> {chart | data = (chart.data |> List.filter (\p -> p.id /= point.id))
+      ++ [Point point.id (selection.originalPoint.x + offsetXWindow) (selection.originalPoint.y - offsetYWindow)]}
+      Nothing -> chart
 
 variance : Chart -> (Float, Float)
 variance chart =
@@ -109,8 +113,12 @@ svgCircle origin point =
       cy (toString (origin.y - point.y)),
       r "5" ,
       Svg.Attributes.cursor "pointer",
-      Svg.Events.onMouseDown (SelectPoint point.id)
+      Svg.Events.on "mousedown" (onDataPointClick point)
     ] []
+
+onDataPointClick : Point -> Decoder Message
+onDataPointClick point =
+  Json.Decode.map (\position -> SelectPoint (Selection point position)) Mouse.position
 
 circles : Chart -> List (Svg Message)
 circles chart =

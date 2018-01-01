@@ -1,7 +1,7 @@
 {
     "version": "1.0.0",
     "summary": "A visual interactive interpretation of correlation",
-    "repository": "https://github.com/mbojakowski/visual-correl-elm",
+    "repository": "https://github.com/mbojakowski/visual-correl-elm.git",
     "license": "BSD3",
     "source-directories": [
         "."
